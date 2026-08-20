@@ -16,11 +16,6 @@ import javafx.stage.Stage;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
-/**
- * Dark, terminal-styled dashboard. Equivalent of the Next.js Dashboard component +
- * app/api/execute/route.ts, but wired directly to SshService (no HTTP hop needed
- * since everything runs in one desktop process).
- */
 public class DashboardView {
 
     private static final String BG = "#0d1117";
@@ -41,16 +36,9 @@ public class DashboardView {
     private final Label statusLabel = new Label("Not connected");
     private final CheckBox mockModeBox = new CheckBox("Mock mode (no server needed)");
 
-    // Preset commands shown as buttons — extend this list as needed
-    private final String[][] presetCommands = {
-            {"Disk Usage", "df -h"},
-            {"Memory", "free -m"},
-            {"Uptime", "uptime"},
-            {"Who Am I", "whoami"},
-            {"System Info", "uname -a"},
-            {"Processes", "ps aux"},
-            {"Network Ports", "netstat -tulpn"},
-            {"Current Dir", "pwd"}
+    private static final String[] DISP_WORK_FILTER_LABELS = {
+            "kernel release",
+            "patch number"
     };
 
     public void start(Stage stage) {
@@ -106,7 +94,6 @@ public class DashboardView {
     private BorderPane buildCenter() {
         BorderPane center = new BorderPane();
 
-        // Left: preset command buttons
         VBox buttonPanel = new VBox(8);
         buttonPanel.setPadding(new Insets(0, 16, 0, 0));
         buttonPanel.setPrefWidth(200);
@@ -116,15 +103,12 @@ public class DashboardView {
         presetLabel.setFont(Font.font("Consolas", 12));
         buttonPanel.getChildren().add(presetLabel);
 
-        for (String[] preset : presetCommands) {
-            Button btn = new Button(preset[0]);
-            btn.setMaxWidth(Double.MAX_VALUE);
-            styleButton(btn, PANEL);
-            btn.setOnAction(e -> runCommand(preset[1]));
-            buttonPanel.getChildren().add(btn);
-        }
+        Button dispWorkBtn = new Button("disp+work");
+        dispWorkBtn.setMaxWidth(Double.MAX_VALUE);
+        styleButton(dispWorkBtn, PANEL);
+        dispWorkBtn.setOnAction(e -> runDispWork());
+        buttonPanel.getChildren().add(dispWorkBtn);
 
-        // Custom command row
         Label customLabel = new Label("CUSTOM COMMAND");
         customLabel.setTextFill(Color.web("#8b949e"));
         customLabel.setFont(Font.font("Consolas", 12));
@@ -138,7 +122,6 @@ public class DashboardView {
         VBox.setMargin(customLabel, new Insets(16, 0, 0, 0));
         buttonPanel.getChildren().addAll(customLabel, customRow);
 
-        // Right: terminal-style output
         outputArea.setEditable(false);
         outputArea.setWrapText(true);
         outputArea.setStyle(
@@ -162,6 +145,59 @@ public class DashboardView {
         return center;
     }
 
+    private void runDispWork() {
+        String command = "disp+work";
+
+        if (!SshService.MOCK_MODE && hostField.getText().isBlank()) {
+            appendOutput("! Enter a host/IP first (or enable Mock mode).");
+            return;
+        }
+
+        appendOutput("\n$ " + command + " | grep -Ei \"kernel release|patch number\"");
+        statusLabel.setText("Running...");
+
+        Thread worker = new Thread(() -> {
+            ConnectionConfig config = new ConnectionConfig(
+                    hostField.getText().trim(),
+                    parsePort(portField.getText()),
+                    userField.getText().trim(),
+                    passField.getText()
+            );
+
+            CommandResult result = sshService.executeCommand(config, command);
+
+            Platform.runLater(() -> {
+                if (result.isSuccess()) {
+                    String filtered = filterDispWorkOutput(result.getOutput());
+                    appendOutput(filtered.isBlank()
+                            ? "(no matching lines found)"
+                            : filtered);
+                    statusLabel.setText("Connected");
+                } else {
+                    appendOutput("! Error: " + result.getErrorMessage());
+                    statusLabel.setText("Connection failed");
+                }
+            });
+        });
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private String filterDispWorkOutput(String rawOutput) {
+        StringBuilder result = new StringBuilder();
+        for (String line : rawOutput.split("\n")) {
+            String lowerLine = line.toLowerCase().trim();
+            for (String label : DISP_WORK_FILTER_LABELS) {
+                if (lowerLine.startsWith(label)) {
+                    if (result.length() > 0) result.append("\n");
+                    result.append(line.trim().replaceAll("\\s{2,}", "  "));
+                    break;
+                }
+            }
+        }
+        return result.toString();
+    }
+
     private void testConnection() {
         appendOutput("$ Testing connection to " + hostField.getText() + "...");
         runCommand("whoami");
@@ -178,7 +214,6 @@ public class DashboardView {
         appendOutput("\n$ " + command);
         statusLabel.setText("Running...");
 
-        // Run off the UI thread so the app doesn't freeze during the SSH call
         Thread worker = new Thread(() -> {
             ConnectionConfig config = new ConnectionConfig(
                     hostField.getText().trim(),

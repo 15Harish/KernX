@@ -7,23 +7,10 @@ import com.jcraft.jsch.Session;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 
-/**
- * Equivalent of lib/ssh/sshService.ts from the original Next.js project.
- * The ONLY class that knows how a command actually runs.
- * Switches between mock mode and real SSH (via JSch) based on MOCK_MODE.
- *
- * To go live with real SSH: set MOCK_MODE = false. Nothing else in the
- * UI layer needs to change (same contract as the original design).
- */
 public class SshService {
 
-    /** Mirrors SSH_MOCK_MODE from the Next.js .env.local */
     public static boolean MOCK_MODE = true;
-
-    /** Mirrors SSH_CONNECT_TIMEOUT_MS */
     public static int CONNECT_TIMEOUT_MS = 12000;
-
-    /** Mirrors SSH_COMMAND_TIMEOUT_MS */
     public static int COMMAND_TIMEOUT_MS = 30000;
 
     public CommandResult executeCommand(ConnectionConfig config, String command) {
@@ -33,14 +20,26 @@ public class SshService {
         return runSshCommand(config, command);
     }
 
-    // ---------------------------------------------------------------
-    // Mock mode — no server needed, useful for building/testing the UI
-    // ---------------------------------------------------------------
     private CommandResult runMockCommand(String command) {
         String cmd = command.trim();
         String output;
 
-        if (cmd.equals("df -h")) {
+        if (cmd.equals("disp+work")) {
+            output = "disp+work=>sapparam(1c): No Profile used.\n"
+                   + "disp+work=>sapparam: SAPSYSTEMNAME neither in Profile nor in Commandline\n\n"
+                   + "----------------------\n"
+                   + "disp+work information\n"
+                   + "----------------------\n\n"
+                   + "kernel release                720\n"
+                   + "kernel make variant            720_REL\n"
+                   + "compiled on                    NT 5.2 3790 S x86 MS VC++ 14.00 for NTAMD64\n"
+                   + "compiled for                   64 BIT\n"
+                   + "compilation mode               UNICODE\n"
+                   + "compile time                   Dec 1 2011 23:12:20\n"
+                   + "update level                   0\n"
+                   + "patch number                   114\n"
+                   + "source id                      0.114";
+        } else if (cmd.equals("df -h")) {
             output = "Filesystem      Size  Used Avail Use% Mounted on\n"
                    + "/dev/sda1        50G   18G   30G  38% /\n"
                    + "tmpfs           3.9G     0  3.9G   0% /dev/shm";
@@ -65,9 +64,6 @@ public class SshService {
         return CommandResult.ok(output, 0);
     }
 
-    // ---------------------------------------------------------------
-    // Real SSH mode via JSch
-    // ---------------------------------------------------------------
     private CommandResult runSshCommand(ConnectionConfig config, String command) {
         Session session = null;
         ChannelExec channel = null;
@@ -77,10 +73,7 @@ public class SshService {
             session = jsch.getSession(config.getUsername(), config.getHost(), config.getPort());
             session.setPassword(config.getPassword());
 
-            // NOTE: accepts any host key, same trade-off as the original project's
-            // hostVerifier — fine for learning/dev, not for production.
             session.setConfig("StrictHostKeyChecking", "no");
-
             session.connect(CONNECT_TIMEOUT_MS);
 
             channel = (ChannelExec) session.openChannel("exec");
