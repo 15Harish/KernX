@@ -1,0 +1,6 @@
+com\linuxconsole\ssh\ConnectionConfig.class
+com\linuxconsole\Main.class
+com\linuxconsole\ui\DashboardView.class
+com\linuxconsole\Launcher.class
+com\linuxconsole\ssh\CommandResult.class
+com\linuxconsole\ssh\SshService.class
