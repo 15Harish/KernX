@@ -30,7 +30,7 @@ public class SshService {
                    + "----------------------\n"
                    + "disp+work information\n"
                    + "----------------------\n\n"
-                   + "kernel release                720\n"
+                   + "kernel release                720 (version 5.15.0-mock)\n"
                    + "kernel make variant            720_REL\n"
                    + "compiled on                    NT 5.2 3790 S x86 MS VC++ 14.00 for NTAMD64\n"
                    + "compiled for                   64 BIT\n"
@@ -38,8 +38,7 @@ public class SshService {
                    + "compile time                   Dec 1 2011 23:12:20\n"
                    + "update level                   0\n"
                    + "patch number                   114\n"
-                   + "source id                      0.114\n"
-                   + "version number                  5.15.0-mock";
+                   + "source id                      0.114";
         } else if (cmd.equals("df -h")) {
             output = "Filesystem      Size  Used Avail Use% Mounted on\n"
                    + "/dev/sda1        50G   18G   30G  38% /\n"
@@ -152,7 +151,23 @@ public class SshService {
                     String err2Str = err2.toString().trim();
                     if (!err2Str.isBlank() && ver.isBlank()) ver = err2Str;
                     if (!ver.isBlank()) {
-                        output = output + "\nversion number                  " + ver;
+                        // Try to inject the version into the "kernel release" line so filters like
+                        // "grep -Ei 'kernel release'" still show the version. If not present, append as fallback.
+                        if (output == null) output = "";
+                        String[] lines = output.split("\\r?\\n", -1);
+                        boolean injected = false;
+                        for (int li = 0; li < lines.length; li++) {
+                            if (lines[li].toLowerCase().contains("kernel release")) {
+                                lines[li] = lines[li] + " (version " + ver + ")";
+                                injected = true;
+                                break;
+                            }
+                        }
+                        if (injected) {
+                            output = String.join("\n", lines);
+                        } else {
+                            output = output + "\nversion number                  " + ver;
+                        }
                     }
                 } catch (Exception ignored) {
                     // don't fail the whole command if the extra probe fails
