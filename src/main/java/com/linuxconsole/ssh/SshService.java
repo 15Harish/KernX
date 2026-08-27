@@ -24,7 +24,7 @@ public class SshService {
         String cmd = command.trim();
         String output;
 
-        if (cmd.equals("disp+work")) {
+        if (cmd.contains("disp+work")) {
             output = "disp+work=>sapparam(1c): No Profile used.\n"
                    + "disp+work=>sapparam: SAPSYSTEMNAME neither in Profile nor in Commandline\n\n"
                    + "----------------------\n"
@@ -38,7 +38,8 @@ public class SshService {
                    + "compile time                   Dec 1 2011 23:12:20\n"
                    + "update level                   0\n"
                    + "patch number                   114\n"
-                   + "source id                      0.114";
+                   + "source id                      0.114\n"
+                   + "version number                  5.15.0-mock";
         } else if (cmd.equals("df -h")) {
             output = "Filesystem      Size  Used Avail Use% Mounted on\n"
                    + "/dev/sda1        50G   18G   30G  38% /\n"
@@ -111,6 +112,53 @@ public class SshService {
 
             if (!errOutput.isBlank()) {
                 output = output.isBlank() ? errOutput : output + "\n" + errOutput;
+            }
+
+            // If the caller requested disp+work, also fetch a system/kernel version and append it
+            String cmdTrim = command == null ? "" : command.trim();
+            if (cmdTrim.contains("disp+work") && session != null && session.isConnected()) {
+                ChannelExec channel2 = null;
+                try {
+                    channel2 = (ChannelExec) session.openChannel("exec");
+                    channel2.setCommand("uname -r");
+
+                    ByteArrayOutputStream out2 = new ByteArrayOutputStream();
+                    ByteArrayOutputStream err2 = new ByteArrayOutputStream();
+                    channel2.setOutputStream(out2);
+                    channel2.setErrStream(err2);
+
+                    InputStream in2 = channel2.getInputStream();
+                    channel2.connect(CONNECT_TIMEOUT_MS);
+
+                    long startTime2 = System.currentTimeMillis();
+                    byte[] tmp2 = new byte[1024];
+                    while (true) {
+                        while (in2.available() > 0) {
+                            int i = in2.read(tmp2, 0, 1024);
+                            if (i < 0) break;
+                            out2.write(tmp2, 0, i);
+                        }
+                        if (channel2.isClosed()) {
+                            if (in2.available() > 0) continue;
+                            break;
+                        }
+                        if (System.currentTimeMillis() - startTime2 > COMMAND_TIMEOUT_MS) {
+                            break;
+                        }
+                        Thread.sleep(50);
+                    }
+
+                    String ver = out2.toString().trim();
+                    String err2Str = err2.toString().trim();
+                    if (!err2Str.isBlank() && ver.isBlank()) ver = err2Str;
+                    if (!ver.isBlank()) {
+                        output = output + "\nversion number                  " + ver;
+                    }
+                } catch (Exception ignored) {
+                    // don't fail the whole command if the extra probe fails
+                } finally {
+                    if (channel2 != null && channel2.isConnected()) channel2.disconnect();
+                }
             }
 
             return CommandResult.ok(output, exitCode);
